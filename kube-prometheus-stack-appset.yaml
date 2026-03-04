@@ -1,0 +1,148 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - cluster: management
+            namespace: monitoring
+  template:
+    metadata:
+      name: "kube-prometheus-stack-{{cluster}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://your-nexus.example.com/repository/helm-proxy/
+        chart: kube-prometheus-stack
+        targetRevision: "58.x.x" # gewünschte Version pinnen
+        helm:
+          releaseName: kube-prometheus-stack
+          values: |
+
+            # ----------------------------------------------------------------
+            # Prometheus Operator
+            # ----------------------------------------------------------------
+            prometheusOperator:
+              image:
+                registry: your-nexus.example.com
+                repository: chainguard/prometheus-operator
+                tag: "latest" # auf Digest pinnen!
+              prometheusConfigReloader:
+                image:
+                  registry: your-nexus.example.com
+                  repository: prometheus-operator/prometheus-config-reloader
+                  tag: "v0.73.0"
+
+            # ----------------------------------------------------------------
+            # Prometheus
+            # ----------------------------------------------------------------
+            prometheus:
+              prometheusSpec:
+                image:
+                  registry: your-nexus.example.com
+                  repository: chainguard/prometheus
+                  tag: "latest" # auf Digest pinnen!
+                retention: 15d
+                storageSpec:
+                  volumeClaimTemplate:
+                    spec:
+                      accessModes: ["ReadWriteOnce"]
+                      resources:
+                        requests:
+                          storage: 50Gi
+
+            # ----------------------------------------------------------------
+            # Alertmanager
+            # ----------------------------------------------------------------
+            alertmanager:
+              alertmanagerSpec:
+                image:
+                  registry: your-nexus.example.com
+                  repository: chainguard/alertmanager
+                  tag: "latest" # auf Digest pinnen!
+              config:
+                global:
+                  resolve_timeout: 5m
+                route:
+                  group_by: ["alertname", "namespace"]
+                  group_wait: 30s
+                  group_interval: 5m
+                  repeat_interval: 12h
+                  receiver: "null"
+                receivers:
+                  - name: "null" # hier Slack/Mail/PagerDuty eintragen
+
+            # ----------------------------------------------------------------
+            # Node Exporter
+            # ----------------------------------------------------------------
+            prometheus-node-exporter:
+              image:
+                registry: your-nexus.example.com
+                repository: chainguard/node-exporter
+                tag: "latest" # auf Digest pinnen!
+
+            # ----------------------------------------------------------------
+            # Kube State Metrics
+            # ----------------------------------------------------------------
+            kube-state-metrics:
+              image:
+                registry: your-nexus.example.com
+                repository: chainguard/kube-state-metrics
+                tag: "latest" # auf Digest pinnen!
+
+            # ----------------------------------------------------------------
+            # Grafana
+            # ----------------------------------------------------------------
+            grafana:
+              image:
+                registry: your-nexus.example.com
+                repository: chainguard/grafana
+                tag: "latest" # auf Digest pinnen!
+
+              # Admin-Passwort aus einem existierenden Secret lesen
+              admin:
+                existingSecret: grafana-admin-secret
+                userKey: admin-user
+                passwordKey: admin-password
+
+              # Persistence
+              persistence:
+                enabled: true
+                size: 10Gi
+
+              # Ingress
+              ingress:
+                enabled: true
+                ingressClassName: nginx
+                hosts:
+                  - grafana.your-domain.example.com
+
+              # Datasource wird automatisch auf den Stack-internen
+              # Prometheus gesetzt – keine manuelle Konfiguration nötig
+              sidecar:
+                image:
+                  registry: your-nexus.example.com
+                  repository: chainguard/k8s-sidecar  # Fallback: kiwigrid/k8s-sidecar
+                  tag: "latest"
+                dashboards:
+                  enabled: true   # ConfigMap-basierte Dashboards automatisch laden
+                datasources:
+                  enabled: true
+
+              # Dashboards als ConfigMaps (air-gapped: keine gnetId verwenden!)
+              dashboardsConfigMaps:
+                default: grafana-dashboards
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true  # wichtig für kube-prometheus-stack CRDs
