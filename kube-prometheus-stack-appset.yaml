@@ -15,26 +15,27 @@ spec:
     spec:
       project: default
       source:
-        repoURL: https://your-nexus.example.com/repository/helm-proxy/
+        repoURL: https://your-nexus.example.com/repository/helm-prometheus-community/
         chart: kube-prometheus-stack
-        targetRevision: "58.x.x" # gewünschte Version pinnen
+        targetRevision: "82.5.0"
         helm:
           releaseName: kube-prometheus-stack
           values: |
-
             # ----------------------------------------------------------------
             # Prometheus Operator
             # ----------------------------------------------------------------
             prometheusOperator:
               image:
                 registry: your-nexus.example.com
-                repository: chainguard/prometheus-operator
-                tag: "latest" # auf Digest pinnen!
+                repository: prometheus-operator-iamguarded
+                tag: ""
+                digest: sha256:# ← hier Digest eintragen
               prometheusConfigReloader:
                 image:
                   registry: your-nexus.example.com
-                  repository: prometheus-operator/prometheus-config-reloader
-                  tag: "v0.73.0"
+                  repository: prometheus-config-reloader-iamguarded
+                  tag: ""
+                  digest: sha256:# ← hier Digest eintragen
 
             # ----------------------------------------------------------------
             # Prometheus
@@ -43,8 +44,9 @@ spec:
               prometheusSpec:
                 image:
                   registry: your-nexus.example.com
-                  repository: chainguard/prometheus
-                  tag: "latest" # auf Digest pinnen!
+                  repository: prometheus-iamguarded
+                  tag: ""
+                  digest: sha256:# ← hier Digest eintragen
                 retention: 15d
                 storageSpec:
                   volumeClaimTemplate:
@@ -61,8 +63,9 @@ spec:
               alertmanagerSpec:
                 image:
                   registry: your-nexus.example.com
-                  repository: chainguard/alertmanager
-                  tag: "latest" # auf Digest pinnen!
+                  repository: prometheus-alertmanager-iamguarded
+                  tag: ""
+                  digest: sha256:# ← hier Digest eintragen
               config:
                 global:
                   resolve_timeout: 5m
@@ -81,8 +84,9 @@ spec:
             prometheus-node-exporter:
               image:
                 registry: your-nexus.example.com
-                repository: chainguard/node-exporter
-                tag: "latest" # auf Digest pinnen!
+                repository: prometheus-node-exporter-iamguarded
+                tag: ""
+                digest: sha256:# ← hier Digest eintragen
 
             # ----------------------------------------------------------------
             # Kube State Metrics
@@ -90,8 +94,9 @@ spec:
             kube-state-metrics:
               image:
                 registry: your-nexus.example.com
-                repository: chainguard/kube-state-metrics
-                tag: "latest" # auf Digest pinnen!
+                repository: kube-state-metrics-iamguarded
+                tag: ""
+                digest: sha256:# ← hier Digest eintragen
 
             # ----------------------------------------------------------------
             # Grafana
@@ -99,40 +104,38 @@ spec:
             grafana:
               image:
                 registry: your-nexus.example.com
-                repository: chainguard/grafana
-                tag: "latest" # auf Digest pinnen!
+                repository: grafana-iamguarded
+                tag: ""
+                digest: sha256:# ← hier Digest eintragen
 
-              # Admin-Passwort aus einem existierenden Secret lesen
+              sidecar:
+                image:
+                  registry: your-nexus.example.com
+                  repository: k8s-sidecar
+                  tag: ""
+                  digest: sha256:# ← hier Digest eintragen
+                dashboards:
+                  enabled: true
+                datasources:
+                  enabled: true
+
+              # Admin-Passwort aus existierendem Secret
               admin:
                 existingSecret: grafana-admin-secret
                 userKey: admin-user
                 passwordKey: admin-password
 
-              # Persistence
               persistence:
                 enabled: true
                 size: 10Gi
 
-              # Ingress
               ingress:
                 enabled: true
                 ingressClassName: nginx
                 hosts:
                   - grafana.your-domain.example.com
 
-              # Datasource wird automatisch auf den Stack-internen
-              # Prometheus gesetzt – keine manuelle Konfiguration nötig
-              sidecar:
-                image:
-                  registry: your-nexus.example.com
-                  repository: chainguard/k8s-sidecar  # Fallback: kiwigrid/k8s-sidecar
-                  tag: "latest"
-                dashboards:
-                  enabled: true   # ConfigMap-basierte Dashboards automatisch laden
-                datasources:
-                  enabled: true
-
-              # Dashboards als ConfigMaps (air-gapped: keine gnetId verwenden!)
+              # Dashboards als ConfigMaps (kein gnetId in air-gapped!)
               dashboardsConfigMaps:
                 default: grafana-dashboards
 
@@ -145,4 +148,4 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
-          - ServerSideApply=true  # wichtig für kube-prometheus-stack CRDs
+          - ServerSideApply=true
