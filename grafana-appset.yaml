@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - cluster: management
+            namespace: monitoring
+  template:
+    metadata:
+      name: "grafana-{{cluster}}"
+    spec:
+      project: default
+      source:
+        repoURL: https://your-nexus.example.com/repository/helm-proxy/
+        chart: grafana
+        targetRevision: "7.x.x"  # gewünschte Version pinnen
+        helm:
+          releaseName: grafana
+          values: |
+            image:
+              repository: your-nexus.example.com/docker-proxy/grafana/grafana
+              tag: "10.4.0"
+            
+            adminPassword: "" # via Secret/ExternalSecret setzen!
+
+            datasources:
+              datasources.yaml:
+                apiVersion: 1
+                datasources:
+                  - name: Prometheus
+                    type: prometheus
+                    url: http://prometheus-server.monitoring.svc.cluster.local
+                    isDefault: true
+
+            dashboardProviders:
+              dashboardproviders.yaml:
+                apiVersion: 1
+                providers:
+                  - name: default
+                    folder: "Kubernetes"
+                    type: file
+                    options:
+                      path: /var/lib/grafana/dashboards/default
+
+            dashboards:
+              default:
+                kubernetes-cluster:
+                  gnetId: 7249   # NUR als Referenz – in air-gapped via ConfigMap laden!
+                  datasource: Prometheus
+
+            persistence:
+              enabled: true
+              size: 10Gi
+
+            ingress:
+              enabled: true
+              ingressClassName: nginx
+              hosts:
+                - grafana.your-domain.example.com
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
